@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/*",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Matt Mastracci <matthew@mastracci.com>"]
+license = "MIT"
+repository = "https://github.com/mmastrac/wsl-rust"
+readme = "README.md"
+categories = ["network", "windows"]
+keywords = ["wsl", "windows", "rust", "com"]
+
+[workspace.dependencies]
+windows = { version = "0.57.0", features = [
+    "Win32_System_Com",
+    "Win32_Foundation"
+] } 
