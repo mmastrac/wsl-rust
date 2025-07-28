@@ -12,7 +12,7 @@ use windows::{
         RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
     },
 };
-use wsl_com_api::{get_lxss_user_session, ILxssUserSession};
+use wsl_com_api_sys::{get_lxss_user_session, ILxssUserSession, LXSS_ENUMERATE_INFO};
 
 mod error;
 pub use error::*;
@@ -106,7 +106,6 @@ impl Wsl {
     fn set_session_blanket(session: &ILxssUserSession) -> Result<(), WslError> {
         let client_security: IClientSecurity = session.cast()?;
 
-        // Query current blanket
         let mut authn_svc = 0;
         let mut authz_svc = 0;
         let mut authn_lvl: RPC_C_AUTHN_LEVEL = RPC_C_AUTHN_LEVEL(0);
@@ -126,11 +125,9 @@ impl Wsl {
             )?;
         }
 
-        // Modify flags
         capabilities.0 &= !EOAC_STATIC_CLOAKING.0;
         capabilities.0 |= EOAC_DYNAMIC_CLOAKING.0;
 
-        // Set the new blanket
         unsafe {
             client_security.SetBlanket::<&IUnknown, PCWSTR>(
                 &session.0,
@@ -207,8 +204,8 @@ pub struct Distribution {
     pub version: Version,
 }
 
-impl From<&wsl_com_api::LXSS_ENUMERATE_INFO> for Distribution {
-    fn from(info: &wsl_com_api::LXSS_ENUMERATE_INFO) -> Self {
+impl From<&LXSS_ENUMERATE_INFO> for Distribution {
+    fn from(info: &LXSS_ENUMERATE_INFO) -> Self {
         let name = unsafe {
             PCWSTR::from_raw(info.DistroName.as_ptr())
                 .to_string()

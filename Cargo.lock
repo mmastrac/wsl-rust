@@ -268,11 +268,11 @@ version = "0.1.0"
 dependencies = [
  "uuid",
  "windows",
- "wsl-com-api",
+ "wsl-com-api-sys",
 ]
 
 [[package]]
-name = "wsl-com-api"
+name = "wsl-com-api-sys"
 version = "0.1.0"
 dependencies = [
  "windows",

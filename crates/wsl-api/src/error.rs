@@ -2,7 +2,7 @@ use windows::core::HRESULT;
 
 #[derive(Debug)]
 enum UnderlyingError {
-    Lxss(wsl_com_api::LxssError),
+    Lxss(wsl_com_api_sys::LxssError),
     Windows(windows::core::Error),
 }
 
@@ -11,20 +11,42 @@ pub struct WslError {
     underlying: UnderlyingError,
 }
 
+impl WslError {
+    pub fn hresult(&self) -> HRESULT {
+        match &self.underlying {
+            UnderlyingError::Lxss(e) => e.0,
+            UnderlyingError::Windows(e) => e.code(),
+        }
+    }
+}
+
 impl std::fmt::Display for WslError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WSL error")
+        let known_error = known_error(self.hresult());
+        if known_error.is_empty() {
+            write!(
+                f,
+                "Unknown WSL error 0x{:08x}: {}",
+                self.hresult().0,
+                self.hresult().message()
+            )
+        } else {
+            write!(f, "WSL error: {}", known_error)
+        }
     }
 }
 
 impl std::error::Error for WslError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
+        match &self.underlying {
+            UnderlyingError::Lxss(_) => None,
+            UnderlyingError::Windows(e) => Some(e),
+        }
     }
 }
 
-impl From<wsl_com_api::LxssError> for WslError {
-    fn from(value: wsl_com_api::LxssError) -> Self {
+impl From<wsl_com_api_sys::LxssError> for WslError {
+    fn from(value: wsl_com_api_sys::LxssError) -> Self {
         WslError {
             underlying: UnderlyingError::Lxss(value),
         }
@@ -40,7 +62,7 @@ impl From<windows::core::Error> for WslError {
 }
 
 fn known_error(error: HRESULT) -> &'static str {
-    use wsl_com_api::error::*;
+    use wsl_com_api_sys::error::*;
     match error {
         WSL_E_DEFAULT_DISTRO_NOT_FOUND => "Default distribution not found",
         WSL_E_DISTRO_NOT_FOUND => "Distribution not found",

@@ -305,6 +305,24 @@ pub fn get_lxss_user_session() -> windows::core::Result<ILxssUserSession> {
 }
 
 impl ILxssUserSession {
+    pub fn CreateInstance(&self, distro_guid: GUID, flags: u32) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).CreateInstance)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                flags,
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
     pub fn GetDefaultDistribution(&self) -> LxssResult<GUID> {
         unsafe {
             let vtable = self.vtable();
@@ -317,6 +335,64 @@ impl ILxssUserSession {
             );
             if result.is_ok() {
                 Ok(guid.assume_init())
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
+    pub fn UnregisterDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).UnregisterDistribution)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
+    pub fn TerminateDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).TerminateDistribution)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
+    pub fn ConfigureDistribution(
+        &self,
+        distro_guid: GUID,
+        default_uid: u32,
+        flags: u32,
+    ) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).ConfigureDistribution)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                default_uid,
+                flags,
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
             } else {
                 Err((result, error_info))
             }
@@ -337,6 +413,56 @@ impl ILxssUserSession {
             );
             if result.is_ok() {
                 Ok((count, distros))
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
+    pub fn SetVersion(
+        &self,
+        distro_guid: GUID,
+        version: u32,
+        stderr_handle: HANDLE,
+    ) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).SetVersion)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                version,
+                stderr_handle,
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
+    pub fn ExportDistribution(
+        &self,
+        distro_guid: GUID,
+        file_handle: HANDLE,
+        stderr_handle: HANDLE,
+        flags: u32,
+    ) -> LxssResult<()> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let result = ((*vtable).ExportDistribution)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                file_handle,
+                stderr_handle,
+                flags,
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(())
             } else {
                 Err((result, error_info))
             }

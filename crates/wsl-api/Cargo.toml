@@ -10,7 +10,7 @@ categories.workspace = true
 keywords.workspace = true
 
 [dependencies]
-wsl-com-api = { path = "../wsl-com-api", version = "0.1.0" }
+wsl-com-api-sys = { path = "../wsl-com-api-sys", version = "0.1.0" }
 windows = { version = "0.57.0", features = [
     "Win32_System_Com",
     "Win32_Foundation",

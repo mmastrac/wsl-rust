@@ -23,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(distro) => println!("Successfully retrieved default distribution: {:?}", distro),
         Err(e) => {
             eprintln!("Failed to get default distribution: {:?}", e);
+            return Err(e.into());
         }
     }
 
@@ -31,13 +32,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(distros) => println!("Successfully enumerated distributions: {:?}", distros),
         Err(e) => {
             eprintln!("Failed to enumerate distributions: {:?}", e);
+            return Err(e.into());
         }
     }
 
     println!("Shutting down WSL...");
     match wsl.shutdown(false) {
         Ok(_) => println!("Successfully shut down WSL"),
-        Err(e) => eprintln!("Failed to shut down WSL: {:?}", e),
+        Err(e) => {
+            eprintln!("Failed to shut down WSL: {:?}", e);
+            return Err(e.into());
+        }
     }
 
     println!("Example completed successfully");
