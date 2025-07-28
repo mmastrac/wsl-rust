@@ -1,14 +1,13 @@
 [package]
 name = "wsl-com-api"
 version = "0.1.0"
-edition = "2021"
-authors = ["Matt Mastracci <matthew@mastracci.com>"]
 description = "WSL COM API for Rust"
-license = "MIT"
-repository = "https://github.com/mmastrac/wsl-rust"
-readme = "README.md"
-categories = ["network", "windows"]
-keywords = ["wsl", "windows", "rust"]
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
 
 [dependencies]
 windows = { version = "0.57.0", features = [
