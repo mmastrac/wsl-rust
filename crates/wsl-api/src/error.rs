@@ -11,6 +11,7 @@ pub struct WslError {
     underlying: UnderlyingError,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum WslErrorKind {
     UnsupportedOperatingSystem,
     UnsupportedWslVersion,
