@@ -305,7 +305,7 @@ pub struct ILxssUserSession_Vtbl {
     ) -> HRESULT,
 }
 
-pub fn get_lxss_user_session() -> windows::core::Result<ILxssUserSession> {
+pub unsafe fn get_lxss_user_session() -> windows::core::Result<ILxssUserSession> {
     let session: ILxssUserSession =
         unsafe { CoCreateInstance(&CLSID_LXSSUSERSESSION, None, CLSCTX_LOCAL_SERVER)? };
 
@@ -313,7 +313,7 @@ pub fn get_lxss_user_session() -> windows::core::Result<ILxssUserSession> {
 }
 
 impl ILxssUserSession {
-    pub fn CreateInstance(&self, distro_guid: GUID, flags: u32) -> LxssResult<()> {
+    pub unsafe fn CreateInstance(&self, distro_guid: GUID, flags: u32) -> LxssResult<()> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
             let mut error_info = std::mem::zeroed();
@@ -331,7 +331,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn GetDefaultDistribution(&self) -> LxssResult<GUID> {
+    pub unsafe fn GetDefaultDistribution(&self) -> LxssResult<GUID> {
         unsafe {
             let vtable = self.vtable();
             let mut error_info: LXSS_ERROR_INFO = std::mem::zeroed();
@@ -349,7 +349,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn UnregisterDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
+    pub unsafe fn UnregisterDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
             let mut error_info = std::mem::zeroed();
@@ -366,7 +366,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn TerminateDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
+    pub unsafe fn TerminateDistribution(&self, distro_guid: GUID) -> LxssResult<()> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
             let mut error_info = std::mem::zeroed();
@@ -383,7 +383,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn ConfigureDistribution(
+    pub unsafe fn ConfigureDistribution(
         &self,
         distro_guid: GUID,
         default_uid: u32,
@@ -427,7 +427,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn SetVersion(
+    pub unsafe fn SetVersion(
         &self,
         distro_guid: GUID,
         version: u32,
@@ -451,7 +451,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn RegisterDistribution(
+    pub unsafe fn RegisterDistribution(
         &self,
         name: PCWSTR,
         version: u32,
@@ -492,7 +492,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn ExportDistribution(
+    pub unsafe fn ExportDistribution(
         &self,
         distro_guid: GUID,
         file_handle: HANDLE,
@@ -518,20 +518,20 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn CreateLxProcess(
+    pub unsafe fn CreateLxProcess(
         &self,
         distro_guid: GUID,
         filename: PCSTR,
         command_line_count: u32,
         command_line: *const PCSTR,
-        cwd: PCWSTR,
-        nt_path: PCWSTR,
-        nt_env: *mut u16,
-        nt_env_len: u32,
-        username: PCWSTR,
+        cwd: PCWSTR,      // optional
+        nt_path: PCWSTR,  // optional
+        nt_env: *mut u16, // optional
+        nt_env_len: u32,  // optional
+        username: PCWSTR, // optional
         columns: i16,
         rows: i16,
-        console_handle: u32,
+        console_handle: u32, // optional
         std_handles: *const LXSS_STD_HANDLES,
         flags: u32,
     ) -> LxssResult<CreateLxProcessResult> {
@@ -584,7 +584,7 @@ impl ILxssUserSession {
         }
     }
 
-    pub fn Shutdown(&self, force: i32) -> Result<()> {
+    pub unsafe fn Shutdown(&self, force: i32) -> Result<()> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
             let result = ((*vtable).Shutdown)(self.0.as_raw(), force);

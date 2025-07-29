@@ -7,6 +7,7 @@ use bitflags::bitflags;
 use uuid::Uuid;
 use windows::core::{IUnknown, Interface, GUID, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{GetLastError, HANDLE};
+use windows::Win32::Networking::WinSock::{WSAStartup, WSADATA};
 use windows::Win32::Storage::FileSystem::{
     GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE, FILE_TYPE_REMOTE,
     FILE_TYPE_UNKNOWN,
@@ -141,8 +142,22 @@ impl Wsl {
         receiver: Receiver<Box<dyn FnOnce(&ILxssUserSession) + Send>>,
         initialized: Sender<windows::core::Result<CoMultithreadedInterface<ILxssUserSession>>>,
     ) {
-        // Initialize COM with apartment threading
         unsafe {
+            // Initialize Winsock
+            let mut wsa_data = std::mem::zeroed();
+            let result = WSAStartup(0x0202, &mut wsa_data);
+            if result != 0 {
+                initialized
+                    .send(Err(windows::core::Error::new(
+                        wsl_com_api_sys::error::WSL_E_INVALID_USAGE,
+                        format!("WSAStartup failed: 0x{:x}", result),
+                    )
+                    .into()))
+                    .expect("thread died (init tx)?");
+                return;
+            }
+
+            // Initialize COM with apartment threading
             let result = CoInitializeEx(None, COINIT_MULTITHREADED);
             if result.is_err() {
                 initialized
@@ -170,7 +185,7 @@ impl Wsl {
         }
 
         // Get the WSL user session
-        let session = match get_lxss_user_session() {
+        let session = match unsafe { get_lxss_user_session() } {
             Ok(session) => session,
             Err(e) => {
                 unsafe {
@@ -283,7 +298,7 @@ impl Wsl {
 
     /// Shuts down WSL and closes this handle.
     pub fn shutdown(self, force: bool) -> Result<(), WslError> {
-        self.execute_thread(move |session| {
+        self.execute_thread(move |session| unsafe {
             session.Shutdown(force as i32)?;
             Ok(())
         })
@@ -291,7 +306,7 @@ impl Wsl {
 
     /// Gets the default distribution.
     pub fn get_default_distribution(&self) -> Result<Uuid, WslError> {
-        self.execute(|session| {
+        self.execute(|session| unsafe {
             Ok(session
                 .GetDefaultDistribution()
                 .map(|guid| Uuid::from_u128(guid.to_u128()))?)
@@ -322,6 +337,7 @@ impl Wsl {
             .iter()
             .map(|arg| CString::new(*arg).unwrap())
             .collect::<Vec<_>>();
+
         let handles = LXSS_STD_HANDLES {
             StdIn: LXSS_HANDLE {
                 Handle: to_handle(&std::io::stdin()).0 as _,
@@ -337,7 +353,7 @@ impl Wsl {
             },
         };
 
-        self.execute_thread(move |session| {
+        self.execute_thread(move |session| unsafe {
             let arg_ptrs = args
                 .iter()
                 .map(|arg| arg.to_bytes_with_nul().as_ptr())
@@ -369,18 +385,16 @@ impl Wsl {
 
     /// Enumerates the distributions.
     pub fn enumerate_distributions(&self) -> Result<Vec<Distribution>, WslError> {
-        self.execute(|session| {
-            let (count, distros) = unsafe { session.EnumerateDistributions()? };
+        self.execute(|session| unsafe {
+            let (count, distros) = session.EnumerateDistributions()?;
             let distros_copy = {
-                let slice = unsafe { std::slice::from_raw_parts(distros, count as usize) };
+                let slice = std::slice::from_raw_parts(distros, count as usize);
                 slice
                     .iter()
                     .map(|distro| Distribution::from(distro))
                     .collect()
             };
-            unsafe {
-                CoTaskMemFree(Some(distros as _));
-            }
+            CoTaskMemFree(Some(distros as _));
             Ok(distros_copy)
         })
     }
@@ -396,7 +410,7 @@ impl Wsl {
         let file_handle = to_handle(&file);
         let stderr_handle = to_handle(&stderr);
 
-        let res = self.execute(move |session| {
+        let res = self.execute(move |session| unsafe {
             // Validate handles in the COM thread to ensure they're still valid
             validate_file_handle("stderr_handle", stderr_handle, FILE_TYPE_PIPE)?;
             validate_file_handle("file_handle", file_handle, FILE_TYPE_DISK)?;
@@ -429,7 +443,7 @@ impl Wsl {
         let stderr_handle = to_handle(&stderr);
         let wide_name = widestring::U16CString::from_str_truncate(name);
 
-        let res = self.execute(move |session| {
+        let res = self.execute(move |session| unsafe {
             // Validate handles in the COM thread to ensure they're still valid
             validate_file_handle("stderr_handle", stderr_handle, FILE_TYPE_PIPE)?;
             validate_file_handle("file_handle", file_handle, FILE_TYPE_DISK)?;
@@ -444,10 +458,8 @@ impl Wsl {
                 0,
                 PCWSTR::null(),
             )?;
-            let name = unsafe { result.InstalledName.to_string().unwrap_or_default() };
-            unsafe {
-                CoTaskMemFree(Some(result.InstalledName.0 as _));
-            }
+            let name = result.InstalledName.to_string().unwrap_or_default();
+            CoTaskMemFree(Some(result.InstalledName.0 as _));
             Ok((Uuid::from_u128(result.Guid.to_u128()), name))
         });
 
