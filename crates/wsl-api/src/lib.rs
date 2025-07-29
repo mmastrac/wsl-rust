@@ -443,9 +443,10 @@ impl Wsl2 {
                     stdin: Some(from_handle(to_handle(&stdin_w))),
                     stdout: Some(from_handle(to_handle(&stdout_r))),
                     stderr: Some(from_handle(to_handle(&stderr_r))),
-                    handle: WslProcessInner::WSL1(result.ProcessHandle, result.ServerHandle),
+                    handle: WslProcessInner::WSL1(result.ProcessHandle),
                 };
 
+                // Close the server handle
                 _ = CloseHandle(result.ServerHandle);
 
                 std::mem::forget(stdin_w);
@@ -666,7 +667,7 @@ fn u32_to_exit_status(exit_code: u32) -> ExitStatus {
 impl WslProcess {
     pub fn wait(self) -> Result<ExitStatus, WslError> {
         match &self.handle {
-            WslProcessInner::WSL1(handle, _) => {
+            WslProcessInner::WSL1(handle) => {
                 // Use WSL-specific waiting mechanism instead of WaitForSingleObject
                 let exit_code = unsafe { wait_for_wsl_process(*handle, u32::MAX)? };
                 Ok(u32_to_exit_status(exit_code))
@@ -683,9 +684,8 @@ impl Drop for WslProcess {
     fn drop(&mut self) {
         match self.handle {
             WslProcessInner::WSL2(_, handle) => unsafe { _ = CloseHandle(handle) },
-            WslProcessInner::WSL1(handle, server_handle) => unsafe {
+            WslProcessInner::WSL1(handle) => unsafe {
                 _ = CloseHandle(handle);
-                _ = CloseHandle(server_handle);
             },
         }
     }
@@ -693,6 +693,6 @@ impl Drop for WslProcess {
 
 #[derive(Debug)]
 enum WslProcessInner {
-    WSL1(HANDLE, HANDLE),
+    WSL1(HANDLE),
     WSL2(Interop, HANDLE),
 }
