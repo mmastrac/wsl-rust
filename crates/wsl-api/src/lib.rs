@@ -420,7 +420,7 @@ impl Wsl2 {
             eprintln!("result: {result:?}");
 
             #[allow(unreachable_code)]
-            let process = if result.ProcessHandle.0 == 0 {
+            let process = if result.ProcessHandle.is_invalid() {
                 // This is harder to mock on unix, so just bail
                 #[cfg(unix)]
                 let tcp = { unreachable!("Unsupported platform") };
@@ -445,6 +445,8 @@ impl Wsl2 {
                     stderr: Some(from_handle(to_handle(&stderr_r))),
                     handle: WslProcessInner::WSL1(result.ProcessHandle, result.ServerHandle),
                 };
+
+                _ = CloseHandle(result.ServerHandle);
 
                 std::mem::forget(stdin_w);
                 std::mem::forget(stdout_r);
