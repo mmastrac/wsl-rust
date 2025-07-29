@@ -35,9 +35,11 @@ fn to_handle(handle: &impl AsRawHandle) -> HANDLE {
 #[cfg(windows)]
 fn from_handle<T: From<std::os::windows::io::OwnedHandle>>(handle: HANDLE) -> T {
     use std::os::windows::io::FromRawHandle;
-    T::from(std::os::windows::io::OwnedHandle::from_raw_handle(
-        handle.0 as _,
-    ))
+    unsafe {
+        T::from(std::os::windows::io::OwnedHandle::from_raw_handle(
+            handle.0 as _,
+        ))
+    }
 }
 
 #[cfg(unix)]
@@ -204,6 +206,14 @@ impl Wsl {
         }
     }
 
+    /// Enables the WSL session to impersonate the calling user's identity when
+    /// making requests to the WSL service. This allows the session to access
+    /// user-specific resources and run processes with the correct permissions
+    /// without requiring elevated privileges for the entire session.
+    ///
+    /// See
+    /// https://learn.microsoft.com/en-us/windows/win32/api/objidl/nf-objidl-iclientsecurity-setblanket
+    /// for details on COM security blankets.
     fn set_session_blanket(session: &ILxssUserSession) -> windows::core::Result<()> {
         let client_security: IClientSecurity = session.cast()?;
 
@@ -287,6 +297,9 @@ impl Wsl {
         })
     }
 
+    /// Launches a Linux process in the specified WSL distribution. The process
+    /// runs under the specified username and returns handles to
+    /// stdin/stdout/stderr for communication.
     pub fn launch(
         &self,
         distro_guid: Uuid,
