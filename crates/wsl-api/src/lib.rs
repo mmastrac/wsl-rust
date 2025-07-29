@@ -1,26 +1,25 @@
+use std::ffi::CString;
+use std::process::{ChildStderr, ChildStdin, ChildStdout};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::{self, JoinHandle};
+
 use bitflags::bitflags;
-use std::{
-    sync::mpsc::{self, Receiver, Sender},
-    thread::{self, JoinHandle},
-};
 use uuid::Uuid;
-use windows::{
-    core::{IUnknown, Interface, GUID, PCWSTR},
-    Win32::{
-        Foundation::{GetLastError, HANDLE},
-        Storage::FileSystem::{
-            GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE, FILE_TYPE_REMOTE,
-            FILE_TYPE_UNKNOWN,
-        },
-        System::Com::{
-            CoInitializeEx, CoInitializeSecurity, CoTaskMemFree, CoUninitialize, IClientSecurity,
-            COINIT_MULTITHREADED, EOAC_DYNAMIC_CLOAKING, EOAC_STATIC_CLOAKING,
-            EOLE_AUTHENTICATION_CAPABILITIES, RPC_C_AUTHN_LEVEL, RPC_C_AUTHN_LEVEL_CONNECT,
-            RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
-        },
-    },
+use windows::core::{IUnknown, Interface, GUID, PCSTR, PCWSTR};
+use windows::Win32::Foundation::{GetLastError, HANDLE};
+use windows::Win32::Storage::FileSystem::{
+    GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE, FILE_TYPE_REMOTE,
+    FILE_TYPE_UNKNOWN,
 };
-use wsl_com_api_sys::{get_lxss_user_session, ILxssUserSession, LXSS_ENUMERATE_INFO};
+use windows::Win32::System::Com::{
+    CoInitializeEx, CoInitializeSecurity, CoTaskMemFree, CoUninitialize, IClientSecurity,
+    COINIT_MULTITHREADED, EOAC_DYNAMIC_CLOAKING, EOAC_STATIC_CLOAKING,
+    EOLE_AUTHENTICATION_CAPABILITIES, RPC_C_AUTHN_LEVEL, RPC_C_AUTHN_LEVEL_CONNECT,
+    RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
+};
+use wsl_com_api_sys::{
+    get_lxss_user_session, ILxssUserSession, LXSS_ENUMERATE_INFO, LXSS_HANDLE, LXSS_STD_HANDLES,
+};
 
 mod error;
 pub use error::*;
@@ -33,11 +32,21 @@ use std::os::windows::io::AsRawHandle;
 fn to_handle(handle: &impl AsRawHandle) -> HANDLE {
     HANDLE(handle.as_raw_handle() as isize)
 }
+#[cfg(windows)]
+fn from_handle<T: From<std::os::windows::io::OwnedHandle>>(handle: HANDLE) -> T {
+    use std::os::windows::io::{FromRawHandle, RawHandle};
+    let handle = RawHandle(handle.0 as _);
+    T::from(std::os::windows::io::OwnedHandle::from_raw_handle(handle))
+}
 
 #[cfg(unix)]
 use std::os::fd::AsRawFd as AsRawHandle;
 #[cfg(unix)]
 fn to_handle(_: &impl AsRawHandle) -> HANDLE {
+    unreachable!("This should never be called on Unix: we only support Windows");
+}
+#[cfg(unix)]
+fn from_handle<T>(_: HANDLE) -> T {
     unreachable!("This should never be called on Unix: we only support Windows");
 }
 
@@ -277,6 +286,72 @@ impl Wsl {
         })
     }
 
+    pub fn launch(
+        &self,
+        distro_guid: Uuid,
+        command: &str,
+        args: &[&str],
+        cwd: Option<&str>,
+        username: &str,
+    ) -> Result<WslProcess, WslError> {
+        let username = widestring::U16CString::from_str_truncate(username);
+        let command = CString::new(command).unwrap();
+        let cwd = cwd.map(|cwd| widestring::U16CString::from_str_truncate(cwd));
+        let nt_path = widestring::U16CString::from_str_truncate(
+            std::env::current_dir()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap(),
+        );
+        let args = args
+            .iter()
+            .map(|arg| CString::new(*arg).unwrap())
+            .collect::<Vec<_>>();
+        let handles = LXSS_STD_HANDLES {
+            StdIn: LXSS_HANDLE {
+                Handle: 0,
+                HandleType: 0,
+            },
+            StdOut: LXSS_HANDLE {
+                Handle: 0,
+                HandleType: 0,
+            },
+            StdErr: LXSS_HANDLE {
+                Handle: 0,
+                HandleType: 0,
+            },
+        };
+
+        self.execute_thread(move |session| {
+            let arg_ptrs = args
+                .iter()
+                .map(|arg| arg.to_bytes_with_nul().as_ptr())
+                .collect::<Vec<_>>();
+            let result = session.CreateLxProcess(
+                GUID::from_u128(distro_guid.as_u128()),
+                PCSTR::from_raw(command.as_ptr() as *const u8),
+                args.len() as u32,
+                arg_ptrs.as_ptr() as *const PCSTR,
+                PCWSTR::from_raw(cwd.map(|cwd| cwd.as_ptr()).unwrap_or(std::ptr::null())),
+                PCWSTR::from_raw(nt_path.as_ptr()),
+                std::ptr::null_mut(), // todo
+                0,                    // todo
+                PCWSTR::from_raw(username.as_ptr()),
+                80,
+                25,
+                0,
+                std::ptr::from_ref(&handles),
+                CreateInstanceFlags::empty().bits(),
+            )?;
+            Ok(WslProcess {
+                stdin: from_handle(result.StandardIn),
+                stdout: from_handle(result.StandardOut),
+                stderr: from_handle(result.StandardErr),
+                handle: result.ProcessHandle,
+            })
+        })
+    }
+
     /// Enumerates the distributions.
     pub fn enumerate_distributions(&self) -> Result<Vec<Distribution>, WslError> {
         self.execute(|session| {
@@ -344,7 +419,7 @@ impl Wsl {
             validate_file_handle("stderr_handle", stderr_handle, FILE_TYPE_PIPE)?;
             validate_file_handle("file_handle", file_handle, FILE_TYPE_DISK)?;
 
-            let (guid, installed_name) = session.RegisterDistribution(
+            let result = session.RegisterDistribution(
                 PCWSTR::from_raw(wide_name.as_ptr()),
                 version.into(),
                 file_handle,
@@ -354,11 +429,11 @@ impl Wsl {
                 0,
                 PCWSTR::null(),
             )?;
-            let name = unsafe { installed_name.to_string().unwrap_or_default() };
+            let name = unsafe { result.InstalledName.to_string().unwrap_or_default() };
             unsafe {
-                CoTaskMemFree(Some(installed_name.0 as _));
+                CoTaskMemFree(Some(result.InstalledName.0 as _));
             }
-            Ok((Uuid::from_u128(guid.to_u128()), name))
+            Ok((Uuid::from_u128(result.Guid.to_u128()), name))
         });
 
         drop(file);
@@ -434,4 +509,21 @@ bitflags! {
         const NO_OOBE = 0x4;
         const FIXED_VHD = 0x8;
     }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct CreateInstanceFlags: u32 {
+        const ALLOW_FS_UPGRADE = 0x1;
+        const OPEN_EXISTING = 0x2;
+        const IGNORE_CLIENT = 0x4;
+        const USE_SYSTEM_DISTRO = 0x8;
+        const SHELL_LOGIN = 0x10;
+    }
+}
+
+#[derive(Debug)]
+pub struct WslProcess {
+    pub stdin: ChildStdin,
+    pub stdout: ChildStdout,
+    pub stderr: ChildStderr,
+    handle: HANDLE,
 }

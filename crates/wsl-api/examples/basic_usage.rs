@@ -76,6 +76,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    println!("Running command...");
+    let result = wsl.launch(default_distro, "echo", &["Hello, world!"], None, "root");
+    match result {
+        Ok(process) => println!("Successfully ran command: {process:?}"),
+        Err(e) => {
+            eprintln!("Failed to run command: {:?}", e);
+            return Err(e.into());
+        }
+    }
+
     println!("Shutting down WSL...");
     match wsl.shutdown(false) {
         Ok(_) => println!("Successfully shut down WSL"),

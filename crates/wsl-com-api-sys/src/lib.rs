@@ -453,7 +453,7 @@ impl ILxssUserSession {
         flags: u32,
         vhd_size: u64, // zero = default size
         package_family_name: PCWSTR,
-    ) -> LxssResult<(GUID, PWSTR)> {
+    ) -> LxssResult<RegisterDistributionResult> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
             let mut error_info = std::mem::zeroed();
@@ -474,7 +474,10 @@ impl ILxssUserSession {
                 guid.as_mut_ptr(),
             );
             if result.is_ok() {
-                Ok((guid.assume_init(), installed_name))
+                Ok(RegisterDistributionResult {
+                    Guid: guid.assume_init(),
+                    InstalledName: installed_name,
+                })
             } else {
                 Err((result, error_info))
             }
@@ -507,6 +510,72 @@ impl ILxssUserSession {
         }
     }
 
+    pub fn CreateLxProcess(
+        &self,
+        distro_guid: GUID,
+        filename: PCSTR,
+        command_line_count: u32,
+        command_line: *const PCSTR,
+        cwd: PCWSTR,
+        nt_path: PCWSTR,
+        nt_env: *mut u16,
+        nt_env_len: u32,
+        username: PCWSTR,
+        columns: i16,
+        rows: i16,
+        console_handle: u32,
+        std_handles: *const LXSS_STD_HANDLES,
+        flags: u32,
+    ) -> LxssResult<CreateLxProcessResult> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let mut lx_process_result = CreateLxProcessResult {
+                DistributionId: GUID::default(),
+                InstanceId: GUID::default(),
+                ProcessHandle: HANDLE::default(),
+                ServerHandle: HANDLE::default(),
+                StandardIn: HANDLE::default(),
+                StandardOut: HANDLE::default(),
+                StandardErr: HANDLE::default(),
+                CommunicationChannel: HANDLE::default(),
+                InteropSocket: HANDLE::default(),
+            };
+            let result = ((*vtable).CreateLxProcess)(
+                self.0.as_raw(),
+                std::ptr::from_ref(&distro_guid),
+                filename,
+                command_line_count,
+                command_line,
+                cwd,
+                nt_path,
+                nt_env,
+                nt_env_len,
+                username,
+                columns,
+                rows,
+                console_handle,
+                std_handles,
+                flags,
+                std::ptr::from_mut(&mut lx_process_result.DistributionId),
+                std::ptr::from_mut(&mut lx_process_result.InstanceId),
+                std::ptr::from_mut(&mut lx_process_result.ProcessHandle),
+                std::ptr::from_mut(&mut lx_process_result.ServerHandle),
+                std::ptr::from_mut(&mut lx_process_result.StandardIn),
+                std::ptr::from_mut(&mut lx_process_result.StandardOut),
+                std::ptr::from_mut(&mut lx_process_result.StandardErr),
+                std::ptr::from_mut(&mut lx_process_result.CommunicationChannel),
+                std::ptr::from_mut(&mut lx_process_result.InteropSocket),
+                std::ptr::from_mut(&mut error_info),
+            );
+            if result.is_ok() {
+                Ok(lx_process_result)
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
     pub fn Shutdown(&self, force: i32) -> Result<()> {
         unsafe {
             let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
@@ -518,4 +587,21 @@ impl ILxssUserSession {
             }
         }
     }
+}
+
+pub struct RegisterDistributionResult {
+    pub Guid: GUID,
+    pub InstalledName: PWSTR,
+}
+
+pub struct CreateLxProcessResult {
+    pub DistributionId: GUID,
+    pub InstanceId: GUID,
+    pub ProcessHandle: HANDLE,
+    pub ServerHandle: HANDLE,
+    pub StandardIn: HANDLE,
+    pub StandardOut: HANDLE,
+    pub StandardErr: HANDLE,
+    pub CommunicationChannel: HANDLE,
+    pub InteropSocket: HANDLE,
 }
