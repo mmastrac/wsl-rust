@@ -11,11 +11,27 @@ pub struct WslError {
     underlying: UnderlyingError,
 }
 
+pub enum WslErrorKind {
+    UnsupportedOperatingSystem,
+    UnsupportedWslVersion,
+}
+
 impl WslError {
     pub fn hresult(&self) -> HRESULT {
         match &self.underlying {
             UnderlyingError::Lxss(e) => e.0,
             UnderlyingError::Windows(e) => e.code(),
+        }
+    }
+
+    pub fn kind(&self) -> Option<WslErrorKind> {
+        #[cfg(not(windows))]
+        return Some(WslErrorKind::UnsupportedOperatingSystem);
+
+        #[cfg(windows)]
+        match self.hresult() {
+            Win32::Foundation::REGDB_E_CLASSNOTREG => Some(WslErrorKind::UnsupportedWslVersion),
+            _ => None,
         }
     }
 }

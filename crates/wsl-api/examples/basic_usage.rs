@@ -1,6 +1,6 @@
 use std::io::BufRead;
 
-use wsl_api::{ExportFlags, ImportFlags, Version, Wsl};
+use wsl_api::{ExportFlags, ImportFlags, Version, Wsl, WslErrorKind};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating WSL API instance...");
@@ -9,6 +9,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(wsl) => {
             println!("WSL API instance created successfully");
             wsl
+        }
+        Err(e) if e.kind() == Some(WslErrorKind::UnsupportedOperatingSystem) => {
+            eprintln!("WSL is not installed or enabled on this operating system");
+            return Ok(());
+        }
+        Err(e) if e.kind() == Some(WslErrorKind::UnsupportedWslVersion) => {
+            eprintln!("WSL version is not supported");
+            return Ok(());
         }
         Err(e) => {
             eprintln!("Failed to create WSL API instance: {:?}", e);
