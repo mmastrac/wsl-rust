@@ -2,6 +2,7 @@
 name = "wsl-com-api-sys"
 version = "0.1.0"
 description = "Low-level WSL COM API for Rust"
+rust-version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true

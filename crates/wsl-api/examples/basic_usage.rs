@@ -1,4 +1,4 @@
-use wsl_api::Wsl;
+use wsl_api::{ExportFlags, ImportFlags, Version, Wsl};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating WSL API instance...");
@@ -19,13 +19,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Getting default distribution...");
-    match wsl.get_default_distribution() {
-        Ok(distro) => println!("Successfully retrieved default distribution: {:?}", distro),
+    let default_distro = match wsl.get_default_distribution() {
+        Ok(distro) => {
+            println!("Successfully retrieved default distribution: {:?}", distro);
+            distro
+        }
         Err(e) => {
             eprintln!("Failed to get default distribution: {:?}", e);
             return Err(e.into());
         }
+    };
+
+    println!("Enumerating distributions...");
+    match wsl.enumerate_distributions() {
+        Ok(distros) => println!("Successfully enumerated distributions: {:?}", distros),
+        Err(e) => {
+            eprintln!("Failed to enumerate distributions: {:?}", e);
+            return Err(e.into());
+        }
     }
+
+    println!("Exporting distribution...");
+    let file = std::fs::File::create("distro.tar.gz").unwrap();
+    let (r, w) = std::io::pipe().unwrap();
+    let result = wsl.export_distribution(default_distro, file, w, ExportFlags::empty());
+    // Keep the read end alive until after the export completes
+    drop(r);
+    match result {
+        Ok(_) => println!("Successfully exported distribution"),
+        Err(e) => {
+            eprintln!("Failed to export distribution: {:?}", e);
+            return Err(e.into());
+        }
+    }
+
+    let file = std::fs::File::open("distro.tar.gz").unwrap();
+
+    println!("Registering distribution...");
+    let (r, w) = std::io::pipe().unwrap();
+    let result = wsl.register_distribution("test", Version::WSL2, file, w, ImportFlags::empty());
+    match result {
+        Ok((guid, name)) => println!("Successfully registered distribution: {:?} {}", guid, name),
+        Err(e) => {
+            eprintln!("Failed to register distribution: {:?}", e);
+            return Err(e.into());
+        }
+    };
+    drop(r);
 
     println!("Enumerating distributions...");
     match wsl.enumerate_distributions() {

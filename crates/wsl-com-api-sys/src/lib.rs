@@ -443,6 +443,44 @@ impl ILxssUserSession {
         }
     }
 
+    pub fn RegisterDistribution(
+        &self,
+        name: PCWSTR,
+        version: u32,
+        file_handle: HANDLE,
+        stderr_handle: HANDLE,
+        target_directory: PCWSTR,
+        flags: u32,
+        vhd_size: u64, // zero = default size
+        package_family_name: PCWSTR,
+    ) -> LxssResult<(GUID, PWSTR)> {
+        unsafe {
+            let vtable = self.0.vtable() as *const _ as *const ILxssUserSession_Vtbl;
+            let mut error_info = std::mem::zeroed();
+            let mut installed_name = PWSTR::null();
+            let mut guid = MaybeUninit::uninit();
+            let result = ((*vtable).RegisterDistribution)(
+                self.0.as_raw(),
+                name,
+                version,
+                file_handle,
+                stderr_handle,
+                target_directory,
+                flags,
+                vhd_size,
+                package_family_name,
+                std::ptr::from_mut(&mut installed_name),
+                std::ptr::from_mut(&mut error_info),
+                guid.as_mut_ptr(),
+            );
+            if result.is_ok() {
+                Ok((guid.assume_init(), installed_name))
+            } else {
+                Err((result, error_info))
+            }
+        }
+    }
+
     pub fn ExportDistribution(
         &self,
         distro_guid: GUID,
