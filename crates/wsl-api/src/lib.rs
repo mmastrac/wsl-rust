@@ -449,9 +449,9 @@ impl Wsl2 {
                 // Close the server handle
                 _ = CloseHandle(result.ServerHandle);
 
-                std::mem::forget(stdin_w);
-                std::mem::forget(stdout_r);
-                std::mem::forget(stderr_r);
+                drop(stdin_w);
+                drop(stdout_r);
+                drop(stderr_r);
 
                 process
             };
