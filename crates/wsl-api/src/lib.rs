@@ -18,7 +18,8 @@ use windows::Win32::System::Com::{
     RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
 };
 use wsl_com_api_sys::{
-    get_lxss_user_session, ILxssUserSession, LXSS_ENUMERATE_INFO, LXSS_HANDLE, LXSS_STD_HANDLES,
+    constants::*, get_lxss_user_session, ILxssUserSession, LxssHandleType, LXSS_ENUMERATE_INFO,
+    LXSS_HANDLE, LXSS_STD_HANDLES,
 };
 
 mod error;
@@ -323,16 +324,16 @@ impl Wsl {
             .collect::<Vec<_>>();
         let handles = LXSS_STD_HANDLES {
             StdIn: LXSS_HANDLE {
-                Handle: 0,
-                HandleType: 0,
+                Handle: to_handle(&std::io::stdin()).0 as _,
+                HandleType: LxssHandleType::LxssHandleInput,
             },
             StdOut: LXSS_HANDLE {
-                Handle: 0,
-                HandleType: 0,
+                Handle: to_handle(&std::io::stdout()).0 as _,
+                HandleType: LxssHandleType::LxssHandleOutput,
             },
             StdErr: LXSS_HANDLE {
-                Handle: 0,
-                HandleType: 0,
+                Handle: to_handle(&std::io::stderr()).0 as _,
+                HandleType: LxssHandleType::LxssHandleOutput,
             },
         };
 
@@ -509,28 +510,28 @@ impl Into<u32> for Version {
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ExportFlags: u32 {
-        const VHD = 0x1;
-        const GZIP = 0x2;
-        const XZIP = 0x4;
-        const VERBOSE = 0x8;
+        const VHD = LXSS_EXPORT_DISTRO_FLAGS_VHD;
+        const GZIP = LXSS_EXPORT_DISTRO_FLAGS_GZIP;
+        const XZIP = LXSS_EXPORT_DISTRO_FLAGS_XZIP;
+        const VERBOSE = LXSS_EXPORT_DISTRO_FLAGS_VERBOSE;
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ImportFlags: u32 {
-        const VHD = 0x1;
-        const CREATE_SHORTCUT = 0x2;
+        const VHD = LXSS_IMPORT_DISTRO_FLAGS_VHD;
+        const CREATE_SHORTCUT = LXSS_IMPORT_DISTRO_FLAGS_CREATE_SHORTCUT;
         /// Disable "out of box experience" script (OOBE)
-        const NO_OOBE = 0x4;
-        const FIXED_VHD = 0x8;
+        const NO_OOBE = LXSS_IMPORT_DISTRO_FLAGS_NO_OOBE;
+        const FIXED_VHD = LXSS_IMPORT_DISTRO_FLAGS_FIXED_VHD;
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CreateInstanceFlags: u32 {
-        const ALLOW_FS_UPGRADE = 0x1;
-        const OPEN_EXISTING = 0x2;
-        const IGNORE_CLIENT = 0x4;
-        const USE_SYSTEM_DISTRO = 0x8;
-        const SHELL_LOGIN = 0x10;
+        const ALLOW_FS_UPGRADE = LXSS_CREATE_INSTANCE_FLAGS_ALLOW_FS_UPGRADE;
+        const OPEN_EXISTING = LXSS_CREATE_INSTANCE_FLAGS_OPEN_EXISTING;
+        const IGNORE_CLIENT = LXSS_CREATE_INSTANCE_FLAGS_IGNORE_CLIENT;
+        const USE_SYSTEM_DISTRO = LXSS_CREATE_INSTANCE_FLAGS_USE_SYSTEM_DISTRO;
+        const SHELL_LOGIN = LXSS_CREATE_INSTANCE_FLAGS_SHELL_LOGIN;
     }
 }
 

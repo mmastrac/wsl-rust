@@ -11,6 +11,7 @@ use windows::{
 
 use std::mem::MaybeUninit;
 
+pub mod constants;
 pub mod error;
 
 const CLSID_LXSSUSERSESSION: GUID = GUID::from_u128(0xa9b7a1b9_0671_405c_95f1_e0612cb4ce7e);
@@ -61,7 +62,14 @@ pub struct LXSS_ENUMERATE_INFO {
 #[repr(C)]
 pub struct LXSS_HANDLE {
     pub Handle: u32,
-    pub HandleType: u32,
+    pub HandleType: LxssHandleType,
+}
+
+#[repr(u32)]
+pub enum LxssHandleType {
+    LxssHandleConsole = 0,
+    LxssHandleInput,
+    LxssHandleOutput,
 }
 
 #[repr(C)]
