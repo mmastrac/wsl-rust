@@ -1,9 +1,13 @@
-# WSL API
+# WSL APIs for Rust
 
-A higher-level Rust API for interacting with Windows Subsystem for Linux (WSL).
+This crate provides a Rust API for interacting with WSL1 and WSL2 using the more
+advanced API available in WSL2.
 
-## Overview
+The API works with WSL1 and WSL2 instance and is capable of:
 
-This crate provides a safe, high-level interface to the WSL API. It manages COM
-initialization in a background thread and provides a clean API for common WSL
-operations.
+ - Registering and exporting distributions
+ - Enumerating distributions
+ - Setting the version of a distribution
+ - Launching processes in the distribution
+
+Note that while WSL1 distributions are supported, you must run them under WSL2 to access this API.

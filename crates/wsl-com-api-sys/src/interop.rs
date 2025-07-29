@@ -55,3 +55,21 @@ pub struct LXBUS_IPC_MESSAGE_MARSHAL_HANDLE_DATA {
     pub Handle: u32,
     pub HandleType: u32,
 }
+
+#[repr(C)]
+pub union LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_PARAMETERS {
+    pub Input: LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_INPUT,
+    pub Output: LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_OUTPUT,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_INPUT {
+    pub TimeoutMs: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_OUTPUT {
+    pub ExitStatus: i32,
+}

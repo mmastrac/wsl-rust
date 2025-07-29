@@ -74,11 +74,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Err(e) => {
-            eprintln!("Failed to create WSL API instance: {:?}", e);
-            eprintln!("This may be due to:");
-            eprintln!("  - WSL not being installed or enabled");
-            eprintln!("  - Insufficient permissions (COM operations require admin privileges)");
-            eprintln!("  - Running in a CI environment without WSL support");
+            eprintln!("Failed to create WSL1/2 API instance: {:?}", e);
+            eprintln!("This may be due to WSL2 not being installed or enabled");
             return Err(e.into());
         }
     };

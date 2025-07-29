@@ -6,7 +6,7 @@ use std::thread::{self, JoinHandle};
 use bitflags::bitflags;
 use uuid::Uuid;
 use windows::core::{IUnknown, Interface, GUID, PCSTR, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, WAIT_FAILED, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
 use windows::Win32::Networking::WinSock::WSAStartup;
 use windows::Win32::Storage::FileSystem::{
     GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE, FILE_TYPE_REMOTE,
@@ -18,11 +18,13 @@ use windows::Win32::System::Com::{
     EOLE_AUTHENTICATION_CAPABILITIES, RPC_C_AUTHN_LEVEL, RPC_C_AUTHN_LEVEL_CONNECT,
     RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
 };
-use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE};
+use windows::Win32::System::IO::DeviceIoControl;
 use wsl_com_api_sys::{
     constants::*, get_lxss_user_session, ILxssUserSession, LxssHandleType, LXSS_ENUMERATE_INFO,
     LXSS_HANDLE, LXSS_STD_HANDLES,
 };
+
+use wsl_com_api_sys::interop::LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_PARAMETERS;
 
 mod error;
 pub use error::*;
@@ -57,6 +59,31 @@ fn to_handle(_: &impl AsRawHandle) -> HANDLE {
 #[cfg(unix)]
 fn from_handle<T>(_: HANDLE) -> T {
     unreachable!("This should never be called on Unix: we only support Windows");
+}
+
+/// WSL-specific process waiting function that uses LXBUS IOCTL
+unsafe fn wait_for_wsl_process(process_handle: HANDLE, timeout_ms: u32) -> Result<u32, WslError> {
+    let mut parameters = LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_PARAMETERS {
+        Input: wsl_com_api_sys::interop::LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_INPUT {
+            TimeoutMs: timeout_ms,
+        },
+    };
+
+    DeviceIoControl(
+        process_handle,
+        LXBUS_IPC_LX_PROCESS_IOCTL_WAIT_FOR_TERMINATION,
+        Some(&parameters.Input as *const _ as *const _),
+        std::mem::size_of::<wsl_com_api_sys::interop::LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_INPUT>(
+        ) as u32,
+        Some(&mut parameters.Output as *mut _ as *mut _),
+        std::mem::size_of::<
+            wsl_com_api_sys::interop::LXBUS_IPC_LX_PROCESS_WAIT_FOR_TERMINATION_OUTPUT,
+        >() as u32,
+        None,
+        None,
+    )?;
+
+    Ok(parameters.Output.ExitStatus as u32)
 }
 
 /// Validates that a file handle is of the expected type
@@ -391,37 +418,30 @@ impl Wsl2 {
 
             eprintln!("result: {result:?}");
 
+            #[allow(unreachable_code)]
             let process = if result.ProcessHandle.0 == 0 {
                 // This is harder to mock on unix, so just bail
                 #[cfg(unix)]
-                #[allow(unreachable_code)]
-                let handle =
-                    { WslProcessInner::WSL2(Interop::new(unreachable!("Unsupported platform"))) };
+                let tcp = { unreachable!("Unsupported platform") };
 
                 #[cfg(windows)]
-                let handle = {
+                let tcp = {
                     use std::net::TcpStream;
                     use std::os::windows::io::FromRawSocket;
-                    let tcp = TcpStream::from_raw_socket(result.InteropSocket.0 as _);
-                    WslProcessInner::WSL2(Interop::new(tcp))
+                    TcpStream::from_raw_socket(result.InteropSocket.0 as _)
                 };
 
                 WslProcess {
-                    // stdin: Some(from_handle(to_handle(&stdin_w))),
-                    // stdout: Some(from_handle(to_handle(&stdout_r))),
-                    // stderr: Some(from_handle(to_handle(&stderr_r))),
                     stdin: Some(from_handle(result.StandardIn)),
                     stdout: Some(from_handle(result.StandardOut)),
                     stderr: Some(from_handle(result.StandardErr)),
-                    control: result.CommunicationChannel,
-                    handle,
+                    handle: WslProcessInner::WSL2(Interop::new(tcp), result.CommunicationChannel),
                 }
             } else {
                 let process = WslProcess {
                     stdin: Some(from_handle(to_handle(&stdin_w))),
                     stdout: Some(from_handle(to_handle(&stdout_r))),
                     stderr: Some(from_handle(to_handle(&stderr_r))),
-                    control: result.CommunicationChannel,
                     handle: WslProcessInner::WSL1(result.ProcessHandle),
                 };
 
@@ -627,7 +647,6 @@ pub struct WslProcess {
     pub stdin: Option<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     pub stderr: Option<ChildStderr>,
-    control: HANDLE,
     handle: WslProcessInner,
 }
 
@@ -645,25 +664,11 @@ impl WslProcess {
     pub fn wait(self) -> Result<ExitStatus, WslError> {
         match &self.handle {
             WslProcessInner::WSL1(handle) => {
-                let result = unsafe { WaitForSingleObject(*handle, INFINITE) };
-                match result {
-                    WAIT_OBJECT_0 => {
-                        let mut exit_code = 0u32;
-                        unsafe { GetExitCodeProcess(*handle, &mut exit_code)? };
-                        Ok(u32_to_exit_status(exit_code))
-                    }
-                    WAIT_FAILED => {
-                        let error = unsafe { GetLastError() };
-                        Err(windows::core::Error::from(error).into())
-                    }
-                    _ => Err(windows::core::Error::new(
-                        windows::core::HRESULT::from_win32(result.0),
-                        "Unexpected wait result",
-                    )
-                    .into()),
-                }
+                // Use WSL-specific waiting mechanism instead of WaitForSingleObject
+                let exit_code = unsafe { wait_for_wsl_process(*handle, u32::MAX)? };
+                Ok(u32_to_exit_status(exit_code))
             }
-            WslProcessInner::WSL2(interop) => {
+            WslProcessInner::WSL2(interop, _) => {
                 let exit = interop.recv_exit_code();
                 Ok(exit.map(u32_to_exit_status).unwrap_or_default())
             }
@@ -673,12 +678,15 @@ impl WslProcess {
 
 impl Drop for WslProcess {
     fn drop(&mut self) {
-        unsafe { _ = CloseHandle(self.control) };
+        match self.handle {
+            WslProcessInner::WSL2(_, handle) => unsafe { _ = CloseHandle(handle) },
+            WslProcessInner::WSL1(handle) => unsafe { _ = CloseHandle(handle) },
+        }
     }
 }
 
 #[derive(Debug)]
 enum WslProcessInner {
     WSL1(HANDLE),
-    WSL2(Interop),
+    WSL2(Interop, HANDLE),
 }
