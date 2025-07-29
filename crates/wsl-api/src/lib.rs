@@ -34,9 +34,10 @@ fn to_handle(handle: &impl AsRawHandle) -> HANDLE {
 }
 #[cfg(windows)]
 fn from_handle<T: From<std::os::windows::io::OwnedHandle>>(handle: HANDLE) -> T {
-    use std::os::windows::io::{FromRawHandle, RawHandle};
-    let handle = RawHandle(handle.0 as _);
-    T::from(std::os::windows::io::OwnedHandle::from_raw_handle(handle))
+    use std::os::windows::io::FromRawHandle;
+    T::from(std::os::windows::io::OwnedHandle::from_raw_handle(
+        handle.0 as _,
+    ))
 }
 
 #[cfg(unix)]
