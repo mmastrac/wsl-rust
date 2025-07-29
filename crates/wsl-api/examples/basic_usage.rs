@@ -2,6 +2,61 @@ use std::io::BufRead;
 
 use wsl_api::{ExportFlags, ImportFlags, Version, Wsl2, WslErrorKind};
 
+fn run_command(wsl: &Wsl2, distro_uuid: uuid::Uuid) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Running command...");
+    let result = wsl.launch(
+        distro_uuid,
+        "/bin/echo",
+        &["echo", "Hello, world!"],
+        None,
+        "root",
+    );
+    let mut process = {
+        match result {
+            Ok(process) => {
+                println!("Successfully ran command: {process:?}");
+                process
+            }
+            Err(e) => {
+                eprintln!("Failed to run command: {:?}", e);
+                return Err(e.into());
+            }
+        }
+    };
+
+    let stdout = process.stdout.take().unwrap();
+    let stderr = process.stderr.take().unwrap();
+
+    let stdout_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => println!("stdout: {}", line),
+                Err(e) => eprintln!("Error reading stdout: {}", e),
+            }
+        }
+    });
+
+    let stderr_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => println!("stderr: {}", line),
+                Err(e) => eprintln!("Error reading stderr: {}", e),
+            }
+        }
+    });
+
+    println!("Waiting for process to finish...");
+    let status = process.wait()?;
+    println!("Process finished with status: {status:?}");
+
+    stdout_thread.join().unwrap();
+    stderr_thread.join().unwrap();
+
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating WSL API instance...");
 
@@ -68,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Registering distribution...");
     let (r, w) = std::io::pipe().unwrap();
     let result = wsl.register_distribution("test", Version::WSL2, file, w, ImportFlags::empty());
-    let guid = match result {
+    let guid_copy = match result {
         Ok((guid, name)) => {
             println!("Successfully registered distribution: {:?} {}", guid, name);
             guid
@@ -81,7 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(r);
 
     println!("Setting version...");
-    let result = wsl.set_version(guid, Version::WSL1, std::io::stderr());
+    let result = wsl.set_version(guid_copy, Version::WSL1, std::io::stderr());
     match result {
         Ok(_) => println!("Successfully set version"),
         Err(e) => {
@@ -99,56 +154,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("Running command...");
-    let result = wsl.launch(
-        default_distro,
-        "/bin/echo",
-        &["echo", "Hello, world!"],
-        None,
-        "root",
-    );
-    let mut process = {
-        match result {
-            Ok(process) => {
-                println!("Successfully ran command: {process:?}");
-                process
-            }
-            Err(e) => {
-                eprintln!("Failed to run command: {:?}", e);
-                return Err(e.into());
-            }
-        }
-    };
+    run_command(&wsl, default_distro)?;
 
-    let stdout = process.stdout.take().unwrap();
-    let stderr = process.stderr.take().unwrap();
-
-    let stdout_thread = std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stdout);
-        for line in reader.lines() {
-            match line {
-                Ok(line) => println!("stdout: {}", line),
-                Err(e) => eprintln!("Error reading stdout: {}", e),
-            }
-        }
-    });
-
-    let stderr_thread = std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        for line in reader.lines() {
-            match line {
-                Ok(line) => println!("stderr: {}", line),
-                Err(e) => eprintln!("Error reading stderr: {}", e),
-            }
-        }
-    });
-
-    println!("Waiting for process to finish...");
-    let status = process.wait()?;
-    println!("Process finished with status: {status:?}");
-
-    stdout_thread.join().unwrap();
-    stderr_thread.join().unwrap();
+    run_command(&wsl, guid_copy)?;
 
     println!("Shutting down WSL...");
     match wsl.shutdown(false) {
