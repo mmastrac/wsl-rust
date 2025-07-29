@@ -31,7 +31,7 @@ impl WslError {
 
         #[cfg(windows)]
         match self.hresult() {
-            Win32::Foundation::REGDB_E_CLASSNOTREG => Some(WslErrorKind::UnsupportedWslVersion),
+            windows::Win32::Foundation::REGDB_E_CLASSNOTREG => Some(WslErrorKind::UnsupportedWslVersion),
             _ => None,
         }
     }
