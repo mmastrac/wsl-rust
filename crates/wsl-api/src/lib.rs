@@ -83,7 +83,8 @@ unsafe fn wait_for_wsl_process(process_handle: HANDLE, timeout_ms: u32) -> Resul
         None,
     )?;
 
-    Ok(parameters.Output.ExitStatus as u32)
+    // The exit status is stored shifted, with status in the lower 8 bits
+    Ok((parameters.Output.ExitStatus as u32) >> 8)
 }
 
 /// Validates that a file handle is of the expected type
@@ -442,7 +443,7 @@ impl Wsl2 {
                     stdin: Some(from_handle(to_handle(&stdin_w))),
                     stdout: Some(from_handle(to_handle(&stdout_r))),
                     stderr: Some(from_handle(to_handle(&stderr_r))),
-                    handle: WslProcessInner::WSL1(result.ProcessHandle),
+                    handle: WslProcessInner::WSL1(result.ProcessHandle, result.ServerHandle),
                 };
 
                 std::mem::forget(stdin_w);
@@ -663,7 +664,7 @@ fn u32_to_exit_status(exit_code: u32) -> ExitStatus {
 impl WslProcess {
     pub fn wait(self) -> Result<ExitStatus, WslError> {
         match &self.handle {
-            WslProcessInner::WSL1(handle) => {
+            WslProcessInner::WSL1(handle, _) => {
                 // Use WSL-specific waiting mechanism instead of WaitForSingleObject
                 let exit_code = unsafe { wait_for_wsl_process(*handle, u32::MAX)? };
                 Ok(u32_to_exit_status(exit_code))
@@ -680,13 +681,16 @@ impl Drop for WslProcess {
     fn drop(&mut self) {
         match self.handle {
             WslProcessInner::WSL2(_, handle) => unsafe { _ = CloseHandle(handle) },
-            WslProcessInner::WSL1(handle) => unsafe { _ = CloseHandle(handle) },
+            WslProcessInner::WSL1(handle, server_handle) => unsafe {
+                _ = CloseHandle(handle);
+                _ = CloseHandle(server_handle);
+            },
         }
     }
 }
 
 #[derive(Debug)]
 enum WslProcessInner {
-    WSL1(HANDLE),
+    WSL1(HANDLE, HANDLE),
     WSL2(Interop, HANDLE),
 }

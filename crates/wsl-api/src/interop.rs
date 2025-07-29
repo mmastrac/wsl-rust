@@ -38,6 +38,7 @@ impl Interop {
                     let exit_status =
                         unsafe { read_direct::<LX_INIT_PROCESS_EXIT_STATUS, _>(&mut reader)? };
                     let _ = tx.send(exit_status.ExitCode);
+                    return Ok(());
                 }
                 unknown => {
                     eprintln!("Unknown message type: {}", unknown);
