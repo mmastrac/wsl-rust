@@ -1,11 +1,11 @@
 use std::io::BufRead;
 
-use wsl_api::{ExportFlags, ImportFlags, Version, Wsl, WslErrorKind};
+use wsl_api::{ExportFlags, ImportFlags, Version, Wsl2, WslErrorKind};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating WSL API instance...");
 
-    let wsl = match Wsl::new() {
+    let wsl = match Wsl2::new() {
         Ok(wsl) => {
             println!("WSL API instance created successfully");
             wsl
@@ -68,14 +68,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Registering distribution...");
     let (r, w) = std::io::pipe().unwrap();
     let result = wsl.register_distribution("test", Version::WSL2, file, w, ImportFlags::empty());
-    match result {
-        Ok((guid, name)) => println!("Successfully registered distribution: {:?} {}", guid, name),
+    let guid = match result {
+        Ok((guid, name)) => {
+            println!("Successfully registered distribution: {:?} {}", guid, name);
+            guid
+        }
         Err(e) => {
             eprintln!("Failed to register distribution: {:?}", e);
             return Err(e.into());
         }
     };
     drop(r);
+
+    println!("Setting version...");
+    let result = wsl.set_version(guid, Version::WSL1, std::io::stderr());
+    match result {
+        Ok(_) => println!("Successfully set version"),
+        Err(e) => {
+            eprintln!("Failed to set version: {:?}", e);
+            return Err(e.into());
+        }
+    }
 
     println!("Enumerating distributions...");
     match wsl.enumerate_distributions() {

@@ -109,8 +109,8 @@ struct CoMultithreadedInterface<T: Interface>(T);
 
 unsafe impl<T: Interface> Send for CoMultithreadedInterface<T> {}
 
-/// A higher-level API for interacting with WSL through COM
-pub struct Wsl {
+/// A higher-level API for interacting with WSL2 through COM
+pub struct Wsl2 {
     /// Channel sender for communicating with the background COM thread
     sender: Sender<Box<dyn FnOnce(&ILxssUserSession) + Send>>,
     /// The WSL session object (thread-safe)
@@ -119,7 +119,7 @@ pub struct Wsl {
     _background_thread: JoinHandle<()>,
 }
 
-impl Wsl {
+impl Wsl2 {
     /// Creates a new WSL API instance with a background COM thread
     pub fn new() -> Result<Self, WslError> {
         let (sender, receiver) = mpsc::channel();
@@ -134,7 +134,7 @@ impl Wsl {
             .expect("thread died (init)?")
             .map_err(WslError::from)?;
 
-        Ok(Wsl {
+        Ok(Wsl2 {
             sender,
             session,
             _background_thread: background_thread,
@@ -513,9 +513,29 @@ impl Wsl {
         drop(stderr);
         res
     }
+
+    pub fn set_version(
+        &self,
+        distribution: Uuid,
+        version: Version,
+        stderr: impl AsRawHandle,
+    ) -> Result<(), WslError> {
+        let handle = to_handle(&stderr);
+        let res = self.execute(move |session| unsafe {
+            session.SetVersion(
+                GUID::from_u128(distribution.as_u128()),
+                version.into(),
+                handle,
+            )?;
+            Ok(())
+        });
+
+        drop(stderr);
+        res
+    }
 }
 
-impl Drop for Wsl {
+impl Drop for Wsl2 {
     fn drop(&mut self) {
         // The background thread will be joined when the JoinHandle is dropped
         // COM will be cleaned up in the background thread
@@ -550,6 +570,7 @@ impl From<&LXSS_ENUMERATE_INFO> for Distribution {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Version {
+    Legacy,
     WSL1,
     WSL2,
     Unknown(u32),
@@ -558,6 +579,7 @@ pub enum Version {
 impl Into<u32> for Version {
     fn into(self) -> u32 {
         match self {
+            Version::Legacy => 0,
             Version::WSL1 => 1,
             Version::WSL2 => 2,
             Version::Unknown(v) => v,
