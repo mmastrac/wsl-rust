@@ -391,41 +391,48 @@ impl Wsl2 {
 
             eprintln!("result: {result:?}");
 
-            let handle = if result.ProcessHandle.0 == 0 {
+            let process = if result.ProcessHandle.0 == 0 {
                 // This is harder to mock on unix, so just bail
                 #[cfg(unix)]
                 #[allow(unreachable_code)]
-                {
-                    WslProcessInner::WSL2(Interop::new(unreachable!("Unsupported platform")))
-                }
+                let handle =
+                    { WslProcessInner::WSL2(Interop::new(unreachable!("Unsupported platform"))) };
 
                 #[cfg(windows)]
-                {
+                let handle = {
                     use std::net::TcpStream;
                     use std::os::windows::io::FromRawSocket;
                     let tcp = TcpStream::from_raw_socket(result.InteropSocket.0 as _);
                     WslProcessInner::WSL2(Interop::new(tcp))
+                };
+
+                WslProcess {
+                    // stdin: Some(from_handle(to_handle(&stdin_w))),
+                    // stdout: Some(from_handle(to_handle(&stdout_r))),
+                    // stderr: Some(from_handle(to_handle(&stderr_r))),
+                    stdin: Some(from_handle(result.StandardIn)),
+                    stdout: Some(from_handle(result.StandardOut)),
+                    stderr: Some(from_handle(result.StandardErr)),
+                    control: result.CommunicationChannel,
+                    handle,
                 }
             } else {
-                WslProcessInner::WSL1(result.ProcessHandle)
+                let process = WslProcess {
+                    stdin: Some(from_handle(to_handle(&stdin_w))),
+                    stdout: Some(from_handle(to_handle(&stdout_r))),
+                    stderr: Some(from_handle(to_handle(&stderr_r))),
+                    control: result.CommunicationChannel,
+                    handle: WslProcessInner::WSL1(result.ProcessHandle),
+                };
+
+                std::mem::forget(stdin_w);
+                std::mem::forget(stdout_r);
+                std::mem::forget(stderr_r);
+
+                process
             };
 
-            let res = Ok(WslProcess {
-                // stdin: Some(from_handle(to_handle(&stdin_w))),
-                // stdout: Some(from_handle(to_handle(&stdout_r))),
-                // stderr: Some(from_handle(to_handle(&stderr_r))),
-                stdin: Some(from_handle(result.StandardIn)),
-                stdout: Some(from_handle(result.StandardOut)),
-                stderr: Some(from_handle(result.StandardErr)),
-                control: result.CommunicationChannel,
-                handle,
-            });
-
-            std::mem::forget(stdin_w);
-            std::mem::forget(stdout_r);
-            std::mem::forget(stderr_r);
-
-            res
+            Ok(process)
         })
     }
 
