@@ -1,18 +1,17 @@
 #![allow(non_snake_case)]
 #![allow(non_camel_case_types)]
 
-use windows::{
-    core::{IUnknown, Interface, Result, GUID, HRESULT, PCSTR, PCWSTR, PWSTR},
-    Win32::{
-        Foundation::HANDLE,
-        System::Com::{CoCreateInstance, CLSCTX_LOCAL_SERVER},
-    },
+use windows::core::{IUnknown, Interface, Result, GUID, HRESULT, PCSTR, PCWSTR, PWSTR};
+use windows::Win32::{
+    Foundation::HANDLE,
+    System::Com::{CoCreateInstance, CLSCTX_LOCAL_SERVER},
 };
 
 use std::mem::MaybeUninit;
 
 pub mod constants;
 pub mod error;
+pub mod interop;
 
 const CLSID_LXSSUSERSESSION: GUID = GUID::from_u128(0xa9b7a1b9_0671_405c_95f1_e0612cb4ce7e);
 const IID_ILXSSUSERSESSION: GUID = GUID::from_u128(0x38541bdc_f54f_4ceb_85d0_37f0f3d2617e);
@@ -602,6 +601,7 @@ pub struct RegisterDistributionResult {
     pub InstalledName: PWSTR,
 }
 
+#[derive(Debug)]
 pub struct CreateLxProcessResult {
     pub DistributionId: GUID,
     pub InstanceId: GUID,

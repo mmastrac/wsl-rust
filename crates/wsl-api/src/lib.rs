@@ -1,13 +1,13 @@
 use std::ffi::CString;
-use std::process::{ChildStderr, ChildStdin, ChildStdout};
+use std::process::{ChildStderr, ChildStdin, ChildStdout, ExitStatus};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
 use bitflags::bitflags;
 use uuid::Uuid;
 use windows::core::{IUnknown, Interface, GUID, PCSTR, PCWSTR};
-use windows::Win32::Foundation::{GetLastError, HANDLE};
-use windows::Win32::Networking::WinSock::{WSAStartup, WSADATA};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, WAIT_FAILED, WAIT_OBJECT_0};
+use windows::Win32::Networking::WinSock::WSAStartup;
 use windows::Win32::Storage::FileSystem::{
     GetFileType, FILE_TYPE_CHAR, FILE_TYPE_DISK, FILE_TYPE_PIPE, FILE_TYPE_REMOTE,
     FILE_TYPE_UNKNOWN,
@@ -18,6 +18,7 @@ use windows::Win32::System::Com::{
     EOLE_AUTHENTICATION_CAPABILITIES, RPC_C_AUTHN_LEVEL, RPC_C_AUTHN_LEVEL_CONNECT,
     RPC_C_IMP_LEVEL, RPC_C_IMP_LEVEL_IDENTIFY, RPC_C_IMP_LEVEL_IMPERSONATE,
 };
+use windows::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE};
 use wsl_com_api_sys::{
     constants::*, get_lxss_user_session, ILxssUserSession, LxssHandleType, LXSS_ENUMERATE_INFO,
     LXSS_HANDLE, LXSS_STD_HANDLES,
@@ -25,6 +26,7 @@ use wsl_com_api_sys::{
 
 mod error;
 pub use error::*;
+mod interop;
 
 // Allows this code to compile on both Windows and Unix
 
@@ -46,6 +48,8 @@ fn from_handle<T: From<std::os::windows::io::OwnedHandle>>(handle: HANDLE) -> T 
 
 #[cfg(unix)]
 use std::os::fd::AsRawFd as AsRawHandle;
+
+use crate::interop::Interop;
 #[cfg(unix)]
 fn to_handle(_: &impl AsRawHandle) -> HANDLE {
     unreachable!("This should never be called on Unix: we only support Windows");
@@ -143,7 +147,9 @@ impl Wsl {
         initialized: Sender<windows::core::Result<CoMultithreadedInterface<ILxssUserSession>>>,
     ) {
         unsafe {
-            // Initialize Winsock
+            // Initialize Winsock: this is required (unsure what requires it,
+            // but we get 8007276D otherwise)
+            // "Either the application has not called WSAStartup, or WSAStartup failed"
             let mut wsa_data = std::mem::zeroed();
             let result = WSAStartup(0x0202, &mut wsa_data);
             if result != 0 {
@@ -338,22 +344,30 @@ impl Wsl {
             .map(|arg| CString::new(*arg).unwrap())
             .collect::<Vec<_>>();
 
+        let (stdin_r, stdin_w) = std::io::pipe().unwrap();
+        let (stdout_r, stdout_w) = std::io::pipe().unwrap();
+        let (stderr_r, stderr_w) = std::io::pipe().unwrap();
+
         let handles = LXSS_STD_HANDLES {
             StdIn: LXSS_HANDLE {
-                Handle: to_handle(&std::io::stdin()).0 as _,
+                Handle: to_handle(&stdin_r).0 as _,
                 HandleType: LxssHandleType::LxssHandleInput,
             },
             StdOut: LXSS_HANDLE {
-                Handle: to_handle(&std::io::stdout()).0 as _,
+                Handle: to_handle(&stdout_w).0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
             StdErr: LXSS_HANDLE {
-                Handle: to_handle(&std::io::stderr()).0 as _,
+                Handle: to_handle(&stderr_w).0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
         };
 
-        self.execute_thread(move |session| unsafe {
+        std::mem::forget(stderr_w);
+        std::mem::forget(stdout_w);
+        std::mem::forget(stdin_r);
+
+        self.execute(move |session| unsafe {
             let arg_ptrs = args
                 .iter()
                 .map(|arg| arg.to_bytes_with_nul().as_ptr())
@@ -374,12 +388,44 @@ impl Wsl {
                 std::ptr::from_ref(&handles),
                 CreateInstanceFlags::empty().bits(),
             )?;
-            Ok(WslProcess {
-                stdin: from_handle(result.StandardIn),
-                stdout: from_handle(result.StandardOut),
-                stderr: from_handle(result.StandardErr),
-                handle: result.ProcessHandle,
-            })
+
+            eprintln!("result: {result:?}");
+
+            let handle = if result.ProcessHandle.0 == 0 {
+                // This is harder to mock on unix, so just bail
+                #[cfg(unix)]
+                #[allow(unreachable_code)]
+                {
+                    WslProcessInner::WSL2(Interop::new(unreachable!("Unsupported platform")))
+                }
+
+                #[cfg(windows)]
+                {
+                    use std::net::TcpStream;
+                    use std::os::windows::io::FromRawSocket;
+                    let tcp = TcpStream::from_raw_socket(result.InteropSocket.0 as _);
+                    WslProcessInner::WSL2(Interop::new(tcp))
+                }
+            } else {
+                WslProcessInner::WSL1(result.ProcessHandle)
+            };
+
+            let res = Ok(WslProcess {
+                // stdin: Some(from_handle(to_handle(&stdin_w))),
+                // stdout: Some(from_handle(to_handle(&stdout_r))),
+                // stderr: Some(from_handle(to_handle(&stderr_r))),
+                stdin: Some(from_handle(result.StandardIn)),
+                stdout: Some(from_handle(result.StandardOut)),
+                stderr: Some(from_handle(result.StandardErr)),
+                control: result.CommunicationChannel,
+                handle,
+            });
+
+            std::mem::forget(stdin_w);
+            std::mem::forget(stdout_r);
+            std::mem::forget(stderr_r);
+
+            res
         })
     }
 
@@ -549,8 +595,61 @@ bitflags! {
 
 #[derive(Debug)]
 pub struct WslProcess {
-    pub stdin: ChildStdin,
-    pub stdout: ChildStdout,
-    pub stderr: ChildStderr,
-    handle: HANDLE,
+    pub stdin: Option<ChildStdin>,
+    pub stdout: Option<ChildStdout>,
+    pub stderr: Option<ChildStderr>,
+    control: HANDLE,
+    handle: WslProcessInner,
+}
+
+fn u32_to_exit_status(exit_code: u32) -> ExitStatus {
+    // Allow this to compile on both Unix and Windows
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+    #[cfg(windows)]
+    use std::os::windows::process::ExitStatusExt;
+
+    ExitStatusExt::from_raw(exit_code as _)
+}
+
+impl WslProcess {
+    pub fn wait(self) -> Result<ExitStatus, WslError> {
+        match &self.handle {
+            WslProcessInner::WSL1(handle) => {
+                let result = unsafe { WaitForSingleObject(*handle, INFINITE) };
+                match result {
+                    WAIT_OBJECT_0 => {
+                        let mut exit_code = 0u32;
+                        unsafe { GetExitCodeProcess(*handle, &mut exit_code)? };
+                        Ok(u32_to_exit_status(exit_code))
+                    }
+                    WAIT_FAILED => {
+                        let error = unsafe { GetLastError() };
+                        Err(windows::core::Error::from(error).into())
+                    }
+                    _ => Err(windows::core::Error::new(
+                        windows::core::HRESULT::from_win32(result.0),
+                        "Unexpected wait result",
+                    )
+                    .into()),
+                }
+            }
+            WslProcessInner::WSL2(interop) => {
+                let exit = interop.recv_exit_code();
+                Ok(exit.map(u32_to_exit_status).unwrap_or_default())
+            }
+        }
+    }
+}
+
+impl Drop for WslProcess {
+    fn drop(&mut self) {
+        unsafe { _ = CloseHandle(self.control) };
+    }
+}
+
+#[derive(Debug)]
+enum WslProcessInner {
+    WSL1(HANDLE),
+    WSL2(Interop),
 }

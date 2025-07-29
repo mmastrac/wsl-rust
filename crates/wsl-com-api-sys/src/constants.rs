@@ -28,3 +28,14 @@ pub const LXSS_IMPORT_DISTRO_FLAGS_FIXED_VHD: u32 = 0x8;
 
 pub const LXSS_ATTACH_MOUNT_FLAGS_PASS_THROUGH: u32 = 0x1;
 pub const LXSS_ATTACH_MOUNT_FLAGS_VHD: u32 = 0x2;
+
+// Interop message types handled at this time
+pub const LX_INIT_MESSAGE_CREATE_PROCESS_UTILITY_VM: u32 = 0x8;
+pub const LX_INIT_MESSAGE_EXIT_STATUS: u32 = 0x9;
+
+// Interop flags
+pub const LX_INIT_CREATE_PROCESS_RESULT_FLAG_GUI_APPLICATION: u32 = 0x1;
+
+// Interop constants
+pub const LX_INIT_STD_FD_COUNT: u32 = 3;
+pub const LX_INIT_CREATE_NT_PROCESS_SOCKETS: u32 = 4;

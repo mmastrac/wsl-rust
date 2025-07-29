@@ -1,3 +1,5 @@
+use std::io::BufRead;
+
 use wsl_api::{ExportFlags, ImportFlags, Version, Wsl};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -77,14 +79,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Running command...");
-    let result = wsl.launch(default_distro, "echo", &["Hello, world!"], None, "root");
-    match result {
-        Ok(process) => println!("Successfully ran command: {process:?}"),
-        Err(e) => {
-            eprintln!("Failed to run command: {:?}", e);
-            return Err(e.into());
+    let result = wsl.launch(
+        default_distro,
+        "/bin/echo",
+        &["echo", "Hello, world!"],
+        None,
+        "root",
+    );
+    let mut process = {
+        match result {
+            Ok(process) => {
+                println!("Successfully ran command: {process:?}");
+                process
+            }
+            Err(e) => {
+                eprintln!("Failed to run command: {:?}", e);
+                return Err(e.into());
+            }
         }
-    }
+    };
+
+    let stdout = process.stdout.take().unwrap();
+    let stderr = process.stderr.take().unwrap();
+
+    let stdout_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => println!("stdout: {}", line),
+                Err(e) => eprintln!("Error reading stdout: {}", e),
+            }
+        }
+    });
+
+    let stderr_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => println!("stderr: {}", line),
+                Err(e) => eprintln!("Error reading stderr: {}", e),
+            }
+        }
+    });
+
+    println!("Waiting for process to finish...");
+    let status = process.wait()?;
+    println!("Process finished with status: {status:?}");
+
+    stdout_thread.join().unwrap();
+    stderr_thread.join().unwrap();
 
     println!("Shutting down WSL...");
     match wsl.shutdown(false) {

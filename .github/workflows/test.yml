@@ -9,6 +9,9 @@ on:
 jobs:
   test-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        wsl-version: [1, 2]
     
     steps:
     - name: Checkout code
@@ -22,8 +25,10 @@ jobs:
         override: true
         
     - name: Enable WSL
-      uses: vedantmgoyal9/setup-wsl2@main
-        
+      uses: Vampire/setup-wsl@v6
+      with:
+        wsl-version: ${{ matrix.wsl-version }}
+
     - name: Run basic usage example
       run: |
         cargo run --example basic_usage
