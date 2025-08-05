@@ -32,7 +32,10 @@ fn run_command(wsl: &Wsl2, distro_uuid: uuid::Uuid) -> Result<(), Box<dyn std::e
         for line in reader.lines() {
             match line {
                 Ok(line) => println!("stdout: {}", line),
-                Err(e) => eprintln!("Error reading stdout: {}", e),
+                Err(e) => {
+                    eprintln!("Error reading stdout: {}", e);
+                    return;
+                }
             }
         }
     });
@@ -42,7 +45,10 @@ fn run_command(wsl: &Wsl2, distro_uuid: uuid::Uuid) -> Result<(), Box<dyn std::e
         for line in reader.lines() {
             match line {
                 Ok(line) => println!("stderr: {}", line),
-                Err(e) => eprintln!("Error reading stderr: {}", e),
+                Err(e) => {
+                    eprintln!("Error reading stderr: {}", e);
+                    return;
+                }
             }
         }
     });
