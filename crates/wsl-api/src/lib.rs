@@ -376,17 +376,19 @@ impl Wsl2 {
         let (stdout_r, stdout_w) = std::io::pipe().unwrap();
         let (stderr_r, stderr_w) = std::io::pipe().unwrap();
 
+        let pipe = (to_handle(&stdin_r), to_handle(&stdout_w), to_handle(&stderr_w));
+
         let handles = LXSS_STD_HANDLES {
             StdIn: LXSS_HANDLE {
-                Handle: to_handle(&stdin_r).0 as _,
+                Handle: pipe.0.0 as _,
                 HandleType: LxssHandleType::LxssHandleInput,
             },
             StdOut: LXSS_HANDLE {
-                Handle: to_handle(&stdout_w).0 as _,
+                Handle: pipe.1.0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
             StdErr: LXSS_HANDLE {
-                Handle: to_handle(&stderr_w).0 as _,
+                Handle: pipe.2.0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
         };
@@ -436,6 +438,7 @@ impl Wsl2 {
                     stdin: Some(from_handle(result.StandardIn)),
                     stdout: Some(from_handle(result.StandardOut)),
                     stderr: Some(from_handle(result.StandardErr)),
+                    pipe,
                     handle: WslProcessInner::WSL2(Interop::new(tcp), result.CommunicationChannel),
                 }
             } else {
@@ -443,6 +446,7 @@ impl Wsl2 {
                     stdin: Some(from_handle(to_handle(&stdin_w))),
                     stdout: Some(from_handle(to_handle(&stdout_r))),
                     stderr: Some(from_handle(to_handle(&stderr_r))),
+                    pipe,
                     handle: WslProcessInner::WSL1(result.ProcessHandle),
                 };
 
@@ -651,6 +655,7 @@ pub struct WslProcess {
     pub stdin: Option<ChildStdin>,
     pub stdout: Option<ChildStdout>,
     pub stderr: Option<ChildStderr>,
+    pipe: (HANDLE, HANDLE, HANDLE),
     handle: WslProcessInner,
 }
 
@@ -687,6 +692,12 @@ impl Drop for WslProcess {
             WslProcessInner::WSL1(handle) => unsafe {
                 _ = CloseHandle(handle);
             },
+        }
+
+        unsafe {
+            _ = CloseHandle(self.pipe.0);
+            _ = CloseHandle(self.pipe.1);
+            _ = CloseHandle(self.pipe.2);
         }
     }
 }
