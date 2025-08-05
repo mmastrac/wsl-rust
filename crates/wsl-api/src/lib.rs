@@ -376,19 +376,23 @@ impl Wsl2 {
         let (stdout_r, stdout_w) = std::io::pipe().unwrap();
         let (stderr_r, stderr_w) = std::io::pipe().unwrap();
 
-        let pipe = (to_handle(&stdin_r), to_handle(&stdout_w), to_handle(&stderr_w));
+        let pipe = (
+            to_handle(&stdin_r),
+            to_handle(&stdout_w),
+            to_handle(&stderr_w),
+        );
 
         let handles = LXSS_STD_HANDLES {
             StdIn: LXSS_HANDLE {
-                Handle: pipe.0.0 as _,
+                Handle: pipe.0 .0 as _,
                 HandleType: LxssHandleType::LxssHandleInput,
             },
             StdOut: LXSS_HANDLE {
-                Handle: pipe.1.0 as _,
+                Handle: pipe.1 .0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
             StdErr: LXSS_HANDLE {
-                Handle: pipe.2.0 as _,
+                Handle: pipe.2 .0 as _,
                 HandleType: LxssHandleType::LxssHandleOutput,
             },
         };
@@ -419,12 +423,11 @@ impl Wsl2 {
                 CreateInstanceFlags::empty().bits(),
             )?;
 
-            eprintln!("result: {result:?}");
-
             #[allow(unreachable_code)]
             let process = if result.ProcessHandle.is_invalid() {
                 // This is harder to mock on unix, so just bail
                 #[cfg(unix)]
+                #[allow(unused)]
                 let tcp = { unreachable!("Unsupported platform") };
 
                 #[cfg(windows)]
